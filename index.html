@@ -1,192 +1,133 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Tower Bloxx Clone</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Tower Bloxx — fixed drop</title>
 <style>
-  html, body {
-    margin: 0;
-    padding: 0;
-    background: linear-gradient(#87ceeb, #e0f6ff);
-    overflow: hidden;
-    touch-action: manipulation;
-    font-family: sans-serif;
-  }
-  canvas {
-    display: block;
-    margin: 0 auto;
-    background: linear-gradient(#87ceeb, #e0f6ff);
-  }
-  #scoreBoard {
-    position: absolute;
-    top: 10px; left: 50%;
-    transform: translateX(-50%);
-    background: rgba(255,255,255,0.8);
-    padding: 6px 12px;
-    border-radius: 8px;
-    font-size: 18px;
-    font-weight: bold;
-  }
-  #message {
-    position: absolute;
-    top: 50%; left: 50%;
-    transform: translate(-50%, -50%);
-    font-size: 48px;
-    font-weight: bold;
-    color: white;
-    text-shadow: 2px 2px 4px rgba(0,0,0,0.7);
-    opacity: 0;
-    transition: opacity 0.3s ease;
-    pointer-events: none;
-  }
-  #restartBtn {
-    position: absolute;
-    top: 60%; left: 50%;
-    transform: translateX(-50%);
-    padding: 10px 20px;
-    font-size: 20px;
-    display: none;
-    background: #ff4081;
-    color: white;
-    border: none;
-    border-radius: 6px;
-  }
+  html,body{margin:0;height:100%;overflow:hidden;background:linear-gradient(#87ceeb,#e0f6ff);font-family:system-ui,Arial}
+  canvas{display:block}
+  #hud{position:fixed;left:50%;top:10px;transform:translateX(-50%);background:rgba(255,255,255,.85);padding:6px 12px;border-radius:10px;font-weight:700}
+  #msg{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);color:#fff;font-size:42px;font-weight:900;text-shadow:0 2px 6px rgba(0,0,0,.6);opacity:0;transition:.25s}
+  #restart{position:fixed;left:50%;top:62%;transform:translateX(-50%);display:none;border:none;background:#ff4b77;color:#fff;padding:10px 18px;border-radius:10px;font-size:18px}
 </style>
 </head>
 <body>
-<canvas id="game"></canvas>
-<div id="scoreBoard">Очки: 0 | Рекорд: 0</div>
-<div id="message"></div>
-<button id="restartBtn">Restart</button>
+<canvas id="cv"></canvas>
+<div id="hud">Очки: 0 | Рекорд: 0</div>
+<div id="msg"></div>
+<button id="restart">Заново</button>
 <script>
-const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
-let W, H;
-function resize() {
-  W = window.innerWidth;
-  H = window.innerHeight;
-  canvas.width = W;
-  canvas.height = H;
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+const hud = document.getElementById('hud'), msg = document.getElementById('msg'), btn = document.getElementById('restart');
+
+let W=0,H=0; const DPR = Math.min(2, window.devicePixelRatio||1);
+function resize(){ W=innerWidth; H=innerHeight; cv.width=W*DPR; cv.height=H*DPR; cv.style.width=W+"px"; cv.style.height=H+"px"; ctx.setTransform(DPR,0,0,DPR,0,0); }
+addEventListener('resize',resize); resize();
+
+const BW=84, BH=42, AMP_MIN=60, AMP_MAX= W/3;
+let blocks=[], current=null;
+let swingAngle=0, swingSpeed=0.02, amp=AMP_MIN;
+let gravity=0.65;
+let mode='swing'; // 'swing' | 'drop' | 'over'
+let score=0, best=+localStorage.getItem('tb_best')||0;
+let towerOffset=0;
+
+function rc(){ const c=['#ff6b6b','#4dd0e1','#ffd166','#6ee7b7','#a78bfa']; return c[Math.random()*c.length|0]; }
+
+function reset(){
+  blocks=[{x:W/2-BW/2,y:H-BH,width:BW,color:rc()}];
+  current={x:W/2-BW/2,y:110,width:BW,height:BH,color:rc(),vy:0,lockedX:null};
+  swingAngle=0; swingSpeed=0.02; amp=Math.min(AMP_MAX, AMP_MIN);
+  towerOffset=0; score=0; mode='swing'; btn.style.display='none';
 }
-window.addEventListener('resize', resize);
-resize();
+reset();
 
-let blocks = [];
-let currentBlock = null;
-let swingAngle = 0;
-let swingSpeed = 0.02;
-let score = 0;
-let highScore = localStorage.getItem('towerHighScore') || 0;
-let gameOver = false;
-let towerOffsetY = 0;
+function show(text){ msg.textContent=text; msg.style.opacity=1; setTimeout(()=>msg.style.opacity=0,450); }
 
-const blockWidth = 80;
-const blockHeight = 40;
-
-function startGame() {
-  blocks = [{x: W/2 - blockWidth/2, y: H - blockHeight, width: blockWidth, color: randColor()}];
-  currentBlock = {x: W/2 - blockWidth/2, y: 100, width: blockWidth, color: randColor()};
-  swingAngle = 0;
-  swingSpeed = 0.02;
-  score = 0;
-  gameOver = false;
-  towerOffsetY = 0;
-  document.getElementById('restartBtn').style.display = 'none';
-}
-
-function randColor() {
-  const colors = ['#ff6666', '#66cc66', '#66a3ff', '#ffcc66', '#cc66ff'];
-  return colors[Math.floor(Math.random()*colors.length)];
+function drop(){
+  if(mode!=='swing') return;
+  // зафиксировать X и перевести в падение
+  const ropeX = W/2 + Math.sin(swingAngle)*amp;
+  current.lockedX = ropeX - BW/2; // фиксируем
+  current.vy = 0;
+  mode='drop';
 }
 
-function dropBlock() {
-  if (gameOver) return;
-  let lastBlock = blocks[blocks.length-1];
-  let centerX = W/2 + Math.sin(swingAngle) * (W/3);
-  currentBlock.x = centerX - blockWidth/2;
-  // Drop animation until collision
-  let dropInterval = setInterval(()=>{
-    currentBlock.y += 10;
-    if (currentBlock.y + blockHeight >= lastBlock.y) {
-      clearInterval(dropInterval);
-      // Check hit accuracy
-      let diff = Math.abs((currentBlock.x + blockWidth/2) - (lastBlock.x + blockWidth/2));
-      if (diff < 5) {
-        showMessage('PERFECT');
-        score += 3;
-      } else if (diff < blockWidth/2) {
-        showMessage('GOOD');
-        score += 1;
-      } else {
-        showMessage('MISS');
-        endGame();
-        return;
-      }
-      blocks.push({...currentBlock});
-      currentBlock = {x: W/2 - blockWidth/2, y: 100 - towerOffsetY, width: blockWidth, color: randColor()};
-      swingSpeed += 0.002;
-      if (blocks.length * blockHeight > H/2) {
-        towerOffsetY += blockHeight;
-        blocks.forEach(b => b.y += blockHeight);
-      }
-    }
-  }, 16);
+function end(){
+  mode='over';
+  if(score>best){ best=score; localStorage.setItem('tb_best', best); }
+  btn.style.display='block';
 }
 
-function endGame() {
-  gameOver = true;
-  if (score > highScore) {
-    highScore = score;
-    localStorage.setItem('towerHighScore', highScore);
-  }
-  document.getElementById('restartBtn').style.display = 'block';
-}
-
-function showMessage(text) {
-  const msg = document.getElementById('message');
-  msg.textContent = text;
-  msg.style.opacity = 1;
-  setTimeout(()=>{ msg.style.opacity = 0; }, 500);
-}
-
-function draw() {
-  ctx.clearRect(0,0,W,H);
-  // Draw clouds (simple parallax)
-  ctx.fillStyle = 'rgba(255,255,255,0.5)';
-  for (let i=0;i<5;i++) {
-    let cloudX = (Date.now()/20 + i*200) % W;
-    let cloudY = 50 + i*30;
-    ctx.beginPath();
-    ctx.ellipse(cloudX, cloudY, 40, 20, 0, 0, Math.PI*2);
-    ctx.fill();
-  }
-  // Draw tower
-  for (let b of blocks) {
-    ctx.fillStyle = b.color;
-    ctx.fillRect(b.x, b.y, b.width, blockHeight);
-    ctx.strokeStyle = 'black';
-    ctx.strokeRect(b.x, b.y, b.width, blockHeight);
-  }
-  // Draw swinging block
-  if (!gameOver && currentBlock) {
-    let centerX = W/2 + Math.sin(swingAngle) * (W/3);
-    ctx.fillStyle = currentBlock.color;
-    ctx.fillRect(centerX - blockWidth/2, currentBlock.y, blockWidth, blockHeight);
-    ctx.strokeRect(centerX - blockWidth/2, currentBlock.y, blockWidth, blockHeight);
+function logic(){
+  if(mode==='swing'){
+    // усиливаем амплитуду постепенно с высотой
     swingAngle += swingSpeed;
+  } else if(mode==='drop'){
+    current.y += current.vy; current.vy += gravity;
+    const last = blocks[blocks.length-1];
+    if(current.y+BH >= last.y){
+      current.y = last.y - BH;
+      // точность
+      const diff = Math.abs((current.lockedX+BW/2) - (last.x+BW/2));
+      if(diff < 5){ show('PERFECT'); score+=3; amp = Math.max(AMP_MIN, amp*0.98); }
+      else if(diff < BW/2){ show('GOOD'); score+=1; }
+      else { show('MISS'); return end(); }
+      // положить блок
+      blocks.push({x:current.lockedX,y:current.y,width:BW,color:current.color});
+      // новый блок
+      current={x:W/2-BW/2,y:110 - towerOffset,width:BW,height:BH,color:rc(),vy:0,lockedX:null};
+      // усложнение
+      swingSpeed = Math.min(0.045, swingSpeed+0.0025);
+      amp = Math.min(AMP_MAX, amp*1.04);
+      // скролл вверх
+      if(blocks.length*BH > H*0.55){ towerOffset += BH; blocks.forEach(b=>b.y+=BH); }
+      mode='swing';
+    }
   }
-  document.getElementById('scoreBoard').textContent = `Очки: ${score} | Рекорд: ${highScore}`;
-  requestAnimationFrame(draw);
 }
 
-canvas.addEventListener('click', dropBlock);
-canvas.addEventListener('touchstart', e => { e.preventDefault(); dropBlock(); });
+function clouds(){
+  ctx.fillStyle='rgba(255,255,255,.55)';
+  for(let i=0;i<5;i++){
+    const x = ((Date.now()/22)+(i*220))% (W+240) - 120;
+    const y = 40 + i*28;
+    ctx.beginPath(); ctx.ellipse(x,y,42,20,0,0,Math.PI*2); ctx.fill();
+  }
+}
 
-document.getElementById('restartBtn').addEventListener('click', startGame);
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  clouds();
 
-startGame();
-draw();
+  // башня
+  for(const b of blocks){
+    ctx.fillStyle=b.color; ctx.fillRect(b.x,b.y,BW,BH);
+    ctx.strokeStyle='#000'; ctx.strokeRect(b.x,b.y,BW,BH);
+  }
+
+  if(mode==='swing'){
+    // кран + болтающийся блок (рисуем по маятнику)
+    const ropeX = W/2 + Math.sin(swingAngle)*amp;
+    ctx.strokeStyle='rgba(0,0,0,.4)'; ctx.beginPath(); ctx.moveTo(W/2,0); ctx.lineTo(ropeX, current.y); ctx.stroke();
+    ctx.fillStyle=current.color; ctx.fillRect(ropeX-BW/2, current.y, BW, BH); ctx.strokeRect(ropeX-BW/2, current.y, BW, BH);
+  } else if(mode==='drop'){
+    // падающий блок по зафиксированному X
+    ctx.fillStyle=current.color; ctx.fillRect(current.lockedX, current.y, BW, BH);
+    ctx.strokeStyle='#000'; ctx.strokeRect(current.lockedX, current.y, BW, BH);
+  }
+
+  hud.textContent = `Очки: ${score} | Рекорд: ${best}`;
+}
+
+function frame(){ logic(); draw(); requestAnimationFrame(frame); }
+requestAnimationFrame(frame);
+
+// ввод
+cv.addEventListener('click', drop, {passive:true});
+cv.addEventListener('touchstart', (e)=>{ e.preventDefault(); drop(); }, {passive:false});
+btn.addEventListener('click', reset);
 </script>
 </body>
 </html>
