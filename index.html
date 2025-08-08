@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tower Bloxx Clone</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: linear-gradient(#87ceeb, #e0f6ff);
+    overflow: hidden;
+    touch-action: manipulation;
+    font-family: sans-serif;
+  }
+  canvas {
+    display: block;
+    margin: 0 auto;
+    background: linear-gradient(#87ceeb, #e0f6ff);
+  }
+  #scoreBoard {
+    position: absolute;
+    top: 10px; left: 50%;
+    transform: translateX(-50%);
+    background: rgba(255,255,255,0.8);
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 18px;
+    font-weight: bold;
+  }
+  #message {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 48px;
+    font-weight: bold;
+    color: white;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.7);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    pointer-events: none;
+  }
+  #restartBtn {
+    position: absolute;
+    top: 60%; left: 50%;
+    transform: translateX(-50%);
+    padding: 10px 20px;
+    font-size: 20px;
+    display: none;
+    background: #ff4081;
+    color: white;
+    border: none;
+    border-radius: 6px;
+  }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="scoreBoard">Очки: 0 | Рекорд: 0</div>
+<div id="message"></div>
+<button id="restartBtn">Restart</button>
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() {
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W;
+  canvas.height = H;
+}
+window.addEventListener('resize', resize);
+resize();
+
+let blocks = [];
+let currentBlock = null;
+let swingAngle = 0;
+let swingSpeed = 0.02;
+let score = 0;
+let highScore = localStorage.getItem('towerHighScore') || 0;
+let gameOver = false;
+let towerOffsetY = 0;
+
+const blockWidth = 80;
+const blockHeight = 40;
+
+function startGame() {
+  blocks = [{x: W/2 - blockWidth/2, y: H - blockHeight, width: blockWidth, color: randColor()}];
+  currentBlock = {x: W/2 - blockWidth/2, y: 100, width: blockWidth, color: randColor()};
+  swingAngle = 0;
+  swingSpeed = 0.02;
+  score = 0;
+  gameOver = false;
+  towerOffsetY = 0;
+  document.getElementById('restartBtn').style.display = 'none';
+}
+
+function randColor() {
+  const colors = ['#ff6666', '#66cc66', '#66a3ff', '#ffcc66', '#cc66ff'];
+  return colors[Math.floor(Math.random()*colors.length)];
+}
+
+function dropBlock() {
+  if (gameOver) return;
+  let lastBlock = blocks[blocks.length-1];
+  let centerX = W/2 + Math.sin(swingAngle) * (W/3);
+  currentBlock.x = centerX - blockWidth/2;
+  // Drop animation until collision
+  let dropInterval = setInterval(()=>{
+    currentBlock.y += 10;
+    if (currentBlock.y + blockHeight >= lastBlock.y) {
+      clearInterval(dropInterval);
+      // Check hit accuracy
+      let diff = Math.abs((currentBlock.x + blockWidth/2) - (lastBlock.x + blockWidth/2));
+      if (diff < 5) {
+        showMessage('PERFECT');
+        score += 3;
+      } else if (diff < blockWidth/2) {
+        showMessage('GOOD');
+        score += 1;
+      } else {
+        showMessage('MISS');
+        endGame();
+        return;
+      }
+      blocks.push({...currentBlock});
+      currentBlock = {x: W/2 - blockWidth/2, y: 100 - towerOffsetY, width: blockWidth, color: randColor()};
+      swingSpeed += 0.002;
+      if (blocks.length * blockHeight > H/2) {
+        towerOffsetY += blockHeight;
+        blocks.forEach(b => b.y += blockHeight);
+      }
+    }
+  }, 16);
+}
+
+function endGame() {
+  gameOver = true;
+  if (score > highScore) {
+    highScore = score;
+    localStorage.setItem('towerHighScore', highScore);
+  }
+  document.getElementById('restartBtn').style.display = 'block';
+}
+
+function showMessage(text) {
+  const msg = document.getElementById('message');
+  msg.textContent = text;
+  msg.style.opacity = 1;
+  setTimeout(()=>{ msg.style.opacity = 0; }, 500);
+}
+
+function draw() {
+  ctx.clearRect(0,0,W,H);
+  // Draw clouds (simple parallax)
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  for (let i=0;i<5;i++) {
+    let cloudX = (Date.now()/20 + i*200) % W;
+    let cloudY = 50 + i*30;
+    ctx.beginPath();
+    ctx.ellipse(cloudX, cloudY, 40, 20, 0, 0, Math.PI*2);
+    ctx.fill();
+  }
+  // Draw tower
+  for (let b of blocks) {
+    ctx.fillStyle = b.color;
+    ctx.fillRect(b.x, b.y, b.width, blockHeight);
+    ctx.strokeStyle = 'black';
+    ctx.strokeRect(b.x, b.y, b.width, blockHeight);
+  }
+  // Draw swinging block
+  if (!gameOver && currentBlock) {
+    let centerX = W/2 + Math.sin(swingAngle) * (W/3);
+    ctx.fillStyle = currentBlock.color;
+    ctx.fillRect(centerX - blockWidth/2, currentBlock.y, blockWidth, blockHeight);
+    ctx.strokeRect(centerX - blockWidth/2, currentBlock.y, blockWidth, blockHeight);
+    swingAngle += swingSpeed;
+  }
+  document.getElementById('scoreBoard').textContent = `Очки: ${score} | Рекорд: ${highScore}`;
+  requestAnimationFrame(draw);
+}
+
+canvas.addEventListener('click', dropBlock);
+canvas.addEventListener('touchstart', e => { e.preventDefault(); dropBlock(); });
+
+document.getElementById('restartBtn').addEventListener('click', startGame);
+
+startGame();
+draw();
+</script>
+</body>
+</html>
