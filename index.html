@@ -3,36 +3,31 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Tower Bloxx — Matter.js + Parallax Ground (fixed z-index)</title>
+<title>Tower Bloxx — Matter.js + Fixed Parallax Ground</title>
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:linear-gradient(#87ceeb,#e0f6ff);font-family:system-ui,Arial}
-  /* Канвас рендера — ПОВЕРХ земли */
   canvas{position:fixed; inset:0; display:block; z-index:2}
 
-  /* HUD — поверх всего */
+  /* HUD */
   #hud{position:fixed;top:10px;left:50%;transform:translateX(-50%);background:rgba(255,255,255,.85);padding:6px 12px;border-radius:10px;font-weight:700;z-index:4}
   #msg{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);color:#fff;font-size:42px;font-weight:900;text-shadow:0 2px 6px rgba(0,0,0,.6);opacity:0;transition:.25s;z-index:4}
   #restart{position:fixed;top:62%;left:50%;transform:translateX(-50%);display:none;border:none;background:#ff4b77;color:#fff;padding:10px 18px;border-radius:10px;font-size:18px;z-index:4}
 
-  /* === Фиксированный параллакс-ландшафт (ПОД канвасом) === */
+  /* Параллакс-ландшафт (статичный) */
   #groundOverlay{
     position:fixed; left:0; right:0; bottom:0; height:110px; z-index:1; pointer-events:none;
     -webkit-mask-image: linear-gradient(to top, rgba(0,0,0,1) 70%, rgba(0,0,0,0) 100%);
             mask-image: linear-gradient(to top, rgba(0,0,0,1) 70%, rgba(0,0,0,0) 100%);
   }
   .layer{position:absolute; left:50%; bottom:0; transform:translateX(-50%); width:200vw; height:100%; overflow:hidden}
-  .hills-back{animation: panSlow 40s linear infinite}
-  .hills-mid{animation: panMed 25s linear infinite}
+  .hills-back{}
+  .hills-mid{}
   .grass-front{
     height:75px; bottom:0; width:200vw;
     background:linear-gradient(#56c26a,#3cab54);
     box-shadow:0 -6px 14px rgba(0,0,0,.18) inset;
-    animation: panFast 15s linear infinite
   }
   #tree{position:absolute; left:18px; bottom:16px; width:78px; height:78px; filter:drop-shadow(0 2px 3px rgba(0,0,0,.25))}
-  @keyframes panSlow { 0%{transform:translate(-50%,0)} 100%{transform:translate(calc(-50% - 25vw),0)} }
-  @keyframes panMed  { 0%{transform:translate(-50%,0)} 100%{transform:translate(calc(-50% - 50vw),0)} }
-  @keyframes panFast { 0%{transform:translate(-50%,0)} 100%{transform:translate(calc(-50% - 75vw),0)} }
 </style>
 </head>
 <body>
@@ -42,7 +37,7 @@
 <div id="msg"></div>
 <button id="restart">Заново</button>
 
-<!-- Фиксированный параллакс (под канвасом) -->
+<!-- Параллакс -->
 <div id="groundOverlay">
   <svg class="layer hills-back" viewBox="0 0 200 60" preserveAspectRatio="none" aria-hidden="true">
     <path d="M0,40 C20,30 35,35 50,40 C65,45 80,38 100,42 C120,46 140,33 155,38 C170,43 185,37 200,42 L200,60 L0,60 Z"
@@ -98,11 +93,11 @@ Runner.run(Runner.create(), engine);
 render.bounds.min = {x:0,y:0};
 render.bounds.max = {x:W,y:H};
 let camY = H/2;
+const baseCamY = H/2; // нижняя граница камеры
 
 /* границы мира */
 const wallL = Bodies.rectangle(-60, H/2, 120, H*6, {isStatic:true, render:{visible:false}});
 const wallR = Bodies.rectangle(W+60, H/2, 120, H*6, {isStatic:true, render:{visible:false}});
-/* физический пол — скрыт; визуальный пол — в оверлее ниже канваса */
 const ground = Bodies.rectangle(W/2, H+45, W*3, 90, {isStatic:true, render:{visible:false}});
 World.add(world, [wallL, wallR, ground]);
 
@@ -137,10 +132,10 @@ Events.on(engine,'beforeUpdate',()=>{
     const ropeX = W/2 + Math.sin(swingAngle)*amp;
     Body.setPosition(current,{x:ropeX,y:current.position.y});
   }
-  // цель: держать верх башни на 40% высоты
+  // держим нижнюю границу на baseCamY
   const bodies = Composite.allBodies(world).filter(b=>!b.isStatic);
   let topY = Infinity; for(const b of bodies){ if(b.bounds.min.y<topY) topY=b.bounds.min.y; }
-  const targetCamY = Math.min(H/2, topY - H*0.2);
+  const targetCamY = Math.min(baseCamY, topY - H*0.2);
   camY += (targetCamY - camY)*0.1;
   render.bounds.min.x = 0;  render.bounds.max.x = W;
   render.bounds.min.y = camY - H/2;
