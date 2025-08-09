@@ -3,13 +3,27 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Tower Bloxx — Matter.js</title>
+<title>Tower Bloxx — Matter.js + Ground</title>
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:linear-gradient(#87ceeb,#e0f6ff);font-family:system-ui,Arial}
-  #hud{position:fixed;top:10px;left:50%;transform:translateX(-50%);background:rgba(255,255,255,.85);padding:6px 12px;border-radius:10px;font-weight:700;z-index:2}
-  #msg{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);color:#fff;font-size:42px;font-weight:900;text-shadow:0 2px 6px rgba(0,0,0,.6);opacity:0;transition:.25s;z-index:2}
-  #restart{position:fixed;top:62%;left:50%;transform:translateX(-50%);display:none;border:none;background:#ff4b77;color:#fff;padding:10px 18px;border-radius:10px;font-size:18px;z-index:2}
   canvas{display:block}
+  #hud{position:fixed;top:10px;left:50%;transform:translateX(-50%);background:rgba(255,255,255,.85);padding:6px 12px;border-radius:10px;font-weight:700;z-index:3}
+  #msg{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);color:#fff;font-size:42px;font-weight:900;text-shadow:0 2px 6px rgba(0,0,0,.6);opacity:0;transition:.25s;z-index:3}
+  #restart{position:fixed;top:62%;left:50%;transform:translateX(-50%);display:none;border:none;background:#ff4b77;color:#fff;padding:10px 18px;border-radius:10px;font-size:18px;z-index:3}
+  /* фиксированный декоративный "земной" слой */
+  #groundOverlay{
+    position:fixed; left:0; right:0; bottom:0; height:90px; z-index:2;
+    pointer-events:none; /* чтобы не мешал тапам */
+  }
+  #grass{
+    position:absolute; left:0; right:0; bottom:0; height:70px;
+    background:linear-gradient(#56c26a,#3cab54);
+    box-shadow:0 -6px 14px rgba(0,0,0,.15) inset;
+  }
+  /* простое дерево (SVG) слева */
+  #tree{
+    position:absolute; left:16px; bottom:16px; width:70px; height:70px; filter:drop-shadow(0 2px 3px rgba(0,0,0,.2));
+  }
 </style>
 </head>
 <body>
@@ -18,12 +32,23 @@
 <div id="msg"></div>
 <button id="restart">Заново</button>
 
-<!-- Подключаем Matter.js из CDN (быстро и надёжно) -->
+<!-- фиксированный декоративный слой -->
+<div id="groundOverlay">
+  <div id="grass"></div>
+  <svg id="tree" viewBox="0 0 64 64" aria-hidden="true">
+    <rect x="28" y="36" width="8" height="20" rx="2" fill="#8b5a2b"/>
+    <circle cx="32" cy="28" r="16" fill="#2e8b57"/>
+    <circle cx="22" cy="32" r="10" fill="#2f9b61"/>
+    <circle cx="42" cy="32" r="10" fill="#2f9b61"/>
+    <circle cx="32" cy="20" r="10" fill="#37a96e"/>
+  </svg>
+</div>
+
+<!-- Matter.js -->
 <script src="https://cdn.jsdelivr.net/npm/matter-js@0.19.0/build/matter.min.js"></script>
 
 <script>
 const cv = document.getElementById('cv');
-const ctx = cv.getContext('2d');
 let W = innerWidth, H = innerHeight;
 function resize(){ W=innerWidth; H=innerHeight; cv.width=W; cv.height=H; }
 addEventListener('resize', resize); resize();
@@ -33,53 +58,50 @@ let score=0, best=+localStorage.getItem('tb_best')||0;
 const hud = document.getElementById('hud');
 const msg = document.getElementById('msg');
 const btn = document.getElementById('restart');
+const colors = ['#ff6b6b','#4dd0e1','#ffd166','#6ee7b7','#a78bfa'];
+const rc = ()=>colors[Math.random()*colors.length|0];
+
 function show(text){ msg.textContent=text; msg.style.opacity=1; setTimeout(()=>msg.style.opacity=0,500); }
 
-// ===== Matter.js setup =====
+// ===== Matter.js =====
 const {Engine,Render,Runner,World,Bodies,Body,Composite,Events} = Matter;
 const engine = Engine.create();
 engine.gravity.y = 1.0;
 const world = engine.world;
 
-// Рендер Matter на наш canvas
 const render = Render.create({
   canvas: cv,
   engine,
-  options: { width: W, height: H, background: 'transparent', wireframes: false }
+  options: { width: W, height: H, background: 'transparent', wireframes: false, hasBounds: true }
 });
 Render.run(render);
 Runner.run(Runner.create(), engine);
 
-// Стены/пол
-const wallL = Bodies.rectangle(-40, H/2, 80, H*2, {isStatic:true});
-const wallR = Bodies.rectangle(W+40, H/2, 80, H*2, {isStatic:true});
-const ground = Bodies.rectangle(W/2, H+40, W, 80, {isStatic:true});
+// начальные bounds (камера)
+render.bounds.min = {x:0, y:0};
+render.bounds.max = {x:W, y:H};
+let camY = H/2; // текущий центр камеры по Y
+
+// стены/пол (в мире, не двигаются)
+const wallL = Bodies.rectangle(-40, H/2, 80, H*4, {isStatic:true});
+const wallR = Bodies.rectangle(W+40, H/2, 80, H*4, {isStatic:true});
+const ground = Bodies.rectangle(W/2, H+40, W*2, 80, {isStatic:true});
 World.add(world, [wallL, wallR, ground]);
 
-// Блоки
-const colors = ['#ff6b6b','#4dd0e1','#ffd166','#6ee7b7','#a78bfa'];
-const rc = ()=>colors[Math.random()*colors.length|0];
-let blocks = [];
-let current = null;
-let mode = 'swing'; // 'swing' | 'drop' | 'over'
-let swingAngle = 0, swingSpeed = 0.02, amp = Math.min(W/3, 220);
-
-// База
+// базовый блок
 const base = Bodies.rectangle(W/2, H - BH/2, BW, BH, {restitution:0.05, friction:0.9, render:{fillStyle:rc()}});
 World.add(world, base);
-blocks.push(base);
+let blocks = [base];
 
-// Новый подвешенный блок (статичен, «едет» по маятнику)
+let current=null, mode='swing', swingAngle=0, swingSpeed=0.02, amp=Math.min(W/3, 220);
+
 function newBlock(){
-  current = Bodies.rectangle(W/2, 120, BW, BH, {
-    restitution:0.05, friction:0.9, render:{fillStyle:rc()}
-  });
+  current = Bodies.rectangle(W/2, 120, BW, BH, { restitution:0.05, friction:0.9, render:{fillStyle:rc()} });
   Body.setStatic(current, true);
   World.add(world, current);
 }
 newBlock();
 
-// Сброс: фиксируем текущую позицию и задаём горизонтальную скорость от маятника
 function drop(){
   if(mode!=='swing') return;
   const ropeX = W/2 + Math.sin(swingAngle)*amp;
@@ -87,45 +109,58 @@ function drop(){
   Body.setPosition(current, {x: ropeX, y: current.position.y});
   Body.setVelocity(current, {x: vx, y: 0});
   Body.setStatic(current, false);
-  mode = 'drop';
+  mode='drop';
 }
 
-// Логика качания подвесного блока
-Events.on(engine, 'beforeUpdate', ()=>{
+Events.on(engine,'beforeUpdate', ()=>{
   if(mode==='swing' && current){
     swingAngle += swingSpeed;
     const ropeX = W/2 + Math.sin(swingAngle)*amp;
     Body.setPosition(current, {x: ropeX, y: current.position.y});
   }
+
+  // ===== КАМЕРА: следим за верхом башни =====
+  // ищем самый "высокий" (минимальный y) среди динамических тел (блоков + текущий, если уже упал)
+  const bodies = Composite.allBodies(world).filter(b=>!b.isStatic);
+  let topY = Infinity;
+  for(const b of bodies){ if(b.bounds.min.y < topY) topY = b.bounds.min.y; }
+  // цель — держать верх примерно на 40% высоты экрана
+  const targetCamY = Math.min(H/2, topY - H*0.2); // чем выше башня (меньше y), тем выше камера; не опускаем ниже стартового
+  // сглаженно двигаем камеру
+  camY += (targetCamY - camY) * 0.08;
+
+  // обновляем bounds и "смотрим"
+  render.bounds.min.x = 0;
+  render.bounds.max.x = W;
+  render.bounds.min.y = camY - H/2;
+  render.bounds.max.y = camY + H/2;
+  Matter.Render.lookAt(render, render.bounds);
 });
 
-// Когда «упавший» блок лег и уснул — считаем установленным, даём очки и создаём новый
-Events.on(engine, 'afterUpdate', ()=>{
+Events.on(engine,'afterUpdate', ()=>{
   if(mode==='drop' && current){
-    // Если улетел мимо экрана — промах
-    if(current.position.y > H + 120){
+    // улетел вниз — промах (не останавливаем игру, просто спавним следующий)
+    if(current.position.y > render.bounds.max.y + 200){
       show('MISS');
-      score = 0; // по желанию можно не сбрасывать
+      current = null;
       newBlock();
       mode='swing';
       return;
     }
-    // Если блок почти не движется — зафиксировался на башне/земле
-    const speed = current.speed;
-    if(speed < 0.15 && current.position.y > 140){
-      // точность по центру с верхним блоком (если он есть)
+    // «лег» (почти остановился) — считаем установленным
+    if(current.speed < 0.15 && current.position.y > 140){
       const last = blocks[blocks.length-1];
-      const diff = Math.abs((current.position.x) - (last.position.x));
+      const diff = Math.abs(current.position.x - last.position.x);
       if(diff < 5){ show('PERFECT'); score+=3; amp = Math.max(80, amp*0.98); }
       else if(diff < BW/2){ show('GOOD'); score+=1; }
-      else { show('OK'); score+=1; }
-
+      else { score+=1; }
       blocks.push(current);
       if(score>best){ best=score; localStorage.setItem('tb_best',best); }
-      // Усложняем маятник
+
       swingSpeed = Math.min(0.045, swingSpeed + 0.0025);
       amp = Math.min(Math.max(W/3, 220), amp*1.04);
 
+      current = null;
       newBlock();
       mode='swing';
     }
@@ -133,16 +168,11 @@ Events.on(engine, 'afterUpdate', ()=>{
 });
 
 // HUD
-(function hudLoop(){
-  hud.textContent = `Очки: ${score} | Рекорд: ${best}`;
-  requestAnimationFrame(hudLoop);
-})();
+(function hudLoop(){ hud.textContent = `Очки: ${score} | Рекорд: ${best}`; requestAnimationFrame(hudLoop); })();
 
-// Ввод
+// ввод
 cv.addEventListener('click', drop, {passive:true});
 cv.addEventListener('touchstart', e=>{ e.preventDefault(); drop(); }, {passive:false});
-
-// Рестарт просто перезагружает (быстро и чисто)
 btn.addEventListener('click', ()=>location.reload());
 </script>
 </body>
