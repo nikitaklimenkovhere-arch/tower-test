@@ -84,7 +84,7 @@ const BW=84, BH=42;
 
 // центр травы
 const grassHeight = 75;
-const baseCenterY = H - grassHeight/2;
+const baseCenterY = (H - grassHeight/2) - (BH/2);
 
 // базовый блок по центру травы
 const base = Bodies.rectangle(W/2, baseCenterY, BW, BH, {restitution:0.05, friction:0.9, render:{fillStyle:rc()}});
