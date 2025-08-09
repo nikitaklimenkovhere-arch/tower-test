@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Tower Bloxx — fixed drop</title>
+<title>Tower Bloxx — diagonal drop</title>
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:linear-gradient(#87ceeb,#e0f6ff);font-family:system-ui,Arial}
   canvas{display:block}
@@ -37,7 +37,7 @@ function rc(){ const c=['#ff6b6b','#4dd0e1','#ffd166','#6ee7b7','#a78bfa']; retu
 
 function reset(){
   blocks=[{x:W/2-BW/2,y:H-BH,width:BW,color:rc()}];
-  current={x:W/2-BW/2,y:110,width:BW,height:BH,color:rc(),vy:0,lockedX:null};
+  current={x:W/2-BW/2,y:110,width:BW,height:BH,color:rc(),vy:0,vx:0};
   swingAngle=0; swingSpeed=0.02; amp=Math.min(AMP_MAX, AMP_MIN);
   towerOffset=0; score=0; mode='swing'; btn.style.display='none';
 }
@@ -47,9 +47,11 @@ function show(text){ msg.textContent=text; msg.style.opacity=1; setTimeout(()=>m
 
 function drop(){
   if(mode!=='swing') return;
-  // зафиксировать X и перевести в падение
+  // позиция и скорость в момент сброса
   const ropeX = W/2 + Math.sin(swingAngle)*amp;
-  current.lockedX = ropeX - BW/2; // фиксируем
+  const ropeVX = Math.cos(swingAngle)*amp*swingSpeed; // горизонтальная скорость
+  current.x = ropeX - BW/2;
+  current.vx = ropeVX;
   current.vy = 0;
   mode='drop';
 }
@@ -62,26 +64,25 @@ function end(){
 
 function logic(){
   if(mode==='swing'){
-    // усиливаем амплитуду постепенно с высотой
     swingAngle += swingSpeed;
   } else if(mode==='drop'){
-    current.y += current.vy; current.vy += gravity;
+    current.x += current.vx;
+    current.y += current.vy; 
+    current.vy += gravity;
     const last = blocks[blocks.length-1];
     if(current.y+BH >= last.y){
       current.y = last.y - BH;
       // точность
-      const diff = Math.abs((current.lockedX+BW/2) - (last.x+BW/2));
+      const diff = Math.abs((current.x+BW/2) - (last.x+BW/2));
       if(diff < 5){ show('PERFECT'); score+=3; amp = Math.max(AMP_MIN, amp*0.98); }
       else if(diff < BW/2){ show('GOOD'); score+=1; }
       else { show('MISS'); return end(); }
       // положить блок
-      blocks.push({x:current.lockedX,y:current.y,width:BW,color:current.color});
+      blocks.push({x:current.x,y:current.y,width:BW,color:current.color});
       // новый блок
-      current={x:W/2-BW/2,y:110 - towerOffset,width:BW,height:BH,color:rc(),vy:0,lockedX:null};
-      // усложнение
+      current={x:W/2-BW/2,y:110 - towerOffset,width:BW,height:BH,color:rc(),vy:0,vx:0};
       swingSpeed = Math.min(0.045, swingSpeed+0.0025);
       amp = Math.min(AMP_MAX, amp*1.04);
-      // скролл вверх
       if(blocks.length*BH > H*0.55){ towerOffset += BH; blocks.forEach(b=>b.y+=BH); }
       mode='swing';
     }
@@ -108,14 +109,12 @@ function draw(){
   }
 
   if(mode==='swing'){
-    // кран + болтающийся блок (рисуем по маятнику)
     const ropeX = W/2 + Math.sin(swingAngle)*amp;
     ctx.strokeStyle='rgba(0,0,0,.4)'; ctx.beginPath(); ctx.moveTo(W/2,0); ctx.lineTo(ropeX, current.y); ctx.stroke();
     ctx.fillStyle=current.color; ctx.fillRect(ropeX-BW/2, current.y, BW, BH); ctx.strokeRect(ropeX-BW/2, current.y, BW, BH);
   } else if(mode==='drop'){
-    // падающий блок по зафиксированному X
-    ctx.fillStyle=current.color; ctx.fillRect(current.lockedX, current.y, BW, BH);
-    ctx.strokeStyle='#000'; ctx.strokeRect(current.lockedX, current.y, BW, BH);
+    ctx.fillStyle=current.color; ctx.fillRect(current.x, current.y, BW, BH);
+    ctx.strokeStyle='#000'; ctx.strokeRect(current.x, current.y, BW, BH);
   }
 
   hud.textContent = `Очки: ${score} | Рекорд: ${best}`;
