@@ -3,49 +3,33 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Tower Bloxx — Matter.js + Parallax Ground</title>
+<title>Tower Bloxx — Matter.js + Parallax Ground (fixed z-index)</title>
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:linear-gradient(#87ceeb,#e0f6ff);font-family:system-ui,Arial}
-  canvas{display:block}
+  /* Канвас рендера — ПОВЕРХ земли */
+  canvas{position:fixed; inset:0; display:block; z-index:2}
 
-  /* HUD */
+  /* HUD — поверх всего */
   #hud{position:fixed;top:10px;left:50%;transform:translateX(-50%);background:rgba(255,255,255,.85);padding:6px 12px;border-radius:10px;font-weight:700;z-index:4}
   #msg{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);color:#fff;font-size:42px;font-weight:900;text-shadow:0 2px 6px rgba(0,0,0,.6);opacity:0;transition:.25s;z-index:4}
   #restart{position:fixed;top:62%;left:50%;transform:translateX(-50%);display:none;border:none;background:#ff4b77;color:#fff;padding:10px 18px;border-radius:10px;font-size:18px;z-index:4}
 
-  /* === Фиксированный снизу параллакс-ландшафт (не двигается вместе с камерой) === */
+  /* === Фиксированный параллакс-ландшафт (ПОД канвасом) === */
   #groundOverlay{
-    position:fixed; left:0; right:0; bottom:0; height:110px; z-index:3; pointer-events:none;
-    /* мягкая маска наверху, чтобы земля красиво переходила в небо */
+    position:fixed; left:0; right:0; bottom:0; height:110px; z-index:1; pointer-events:none;
     -webkit-mask-image: linear-gradient(to top, rgba(0,0,0,1) 70%, rgba(0,0,0,0) 100%);
             mask-image: linear-gradient(to top, rgba(0,0,0,1) 70%, rgba(0,0,0,0) 100%);
   }
-  .layer{
-    position:absolute; left:50%; bottom:0; transform:translateX(-50%);
-    width:200vw; height:100%; overflow:hidden;
-  }
-  /* задние холмы (самые дальние, двигаются медленнее всего) */
-  .hills-back{
-    animation: panSlow 40s linear infinite;
-  }
-  /* средние холмы */
-  .hills-mid{
-    animation: panMed 25s linear infinite;
-  }
-  /* передний план — трава */
+  .layer{position:absolute; left:50%; bottom:0; transform:translateX(-50%); width:200vw; height:100%; overflow:hidden}
+  .hills-back{animation: panSlow 40s linear infinite}
+  .hills-mid{animation: panMed 25s linear infinite}
   .grass-front{
     height:75px; bottom:0; width:200vw;
     background:linear-gradient(#56c26a,#3cab54);
     box-shadow:0 -6px 14px rgba(0,0,0,.18) inset;
-    animation: panFast 15s linear infinite;
+    animation: panFast 15s linear infinite
   }
-
-  /* простое дерево слева на переднем плане */
-  #tree{
-    position:absolute; left:18px; bottom:16px; width:78px; height:78px;
-    filter:drop-shadow(0 2px 3px rgba(0,0,0,.25));
-  }
-
+  #tree{position:absolute; left:18px; bottom:16px; width:78px; height:78px; filter:drop-shadow(0 2px 3px rgba(0,0,0,.25))}
   @keyframes panSlow { 0%{transform:translate(-50%,0)} 100%{transform:translate(calc(-50% - 25vw),0)} }
   @keyframes panMed  { 0%{transform:translate(-50%,0)} 100%{transform:translate(calc(-50% - 50vw),0)} }
   @keyframes panFast { 0%{transform:translate(-50%,0)} 100%{transform:translate(calc(-50% - 75vw),0)} }
@@ -58,22 +42,17 @@
 <div id="msg"></div>
 <button id="restart">Заново</button>
 
-<!-- Фиксированный параллакс-ландшафт -->
+<!-- Фиксированный параллакс (под канвасом) -->
 <div id="groundOverlay">
-  <!-- задний слой холмов -->
   <svg class="layer hills-back" viewBox="0 0 200 60" preserveAspectRatio="none" aria-hidden="true">
     <path d="M0,40 C20,30 35,35 50,40 C65,45 80,38 100,42 C120,46 140,33 155,38 C170,43 185,37 200,42 L200,60 L0,60 Z"
           fill="#78b9e6" opacity="0.45"/>
   </svg>
-  <!-- средний слой холмов -->
   <svg class="layer hills-mid" viewBox="0 0 200 60" preserveAspectRatio="none" aria-hidden="true">
     <path d="M0,44 C18,34 32,38 48,44 C64,50 82,41 100,46 C118,51 138,40 154,44 C172,49 186,43 200,48 L200,60 L0,60 Z"
           fill="#5cb083" opacity="0.65"/>
   </svg>
-  <!-- передний план — трава -->
   <div class="layer grass-front"></div>
-
-  <!-- дерево на переднем плане -->
   <svg id="tree" viewBox="0 0 64 64" aria-hidden="true">
     <rect x="28" y="36" width="8" height="22" rx="2" fill="#8b5a2b"/>
     <circle cx="32" cy="28" r="16" fill="#2e8b57"/>
@@ -87,7 +66,7 @@
 <script src="https://cdn.jsdelivr.net/npm/matter-js@0.19.0/build/matter.min.js"></script>
 
 <script>
-/* ===== базовая настройка канваса ===== */
+/* ===== Canvas ===== */
 const cv = document.getElementById('cv');
 let W = innerWidth, H = innerHeight;
 function resize(){ W=innerWidth; H=innerHeight; cv.width=W; cv.height=H; }
@@ -99,109 +78,92 @@ const msg = document.getElementById('msg');
 const btn = document.getElementById('restart');
 const colors = ['#ff6b6b','#4dd0e1','#ffd166','#6ee7b7','#a78bfa'];
 const rc = ()=>colors[Math.random()*colors.length|0];
-function show(text){ msg.textContent=text; msg.style.opacity=1; setTimeout(()=>msg.style.opacity=0,520); }
-
+function show(t){ msg.textContent=t; msg.style.opacity=1; setTimeout(()=>msg.style.opacity=0,520); }
 let score=0, best=+localStorage.getItem('tb_best')||0;
-(function loopHUD(){ hud.textContent = `Очки: ${score} | Рекорд: ${best}`; requestAnimationFrame(loopHUD); })();
+(function loopHUD(){ hud.textContent=`Очки: ${score} | Рекорд: ${best}`; requestAnimationFrame(loopHUD); })();
 
 /* ===== Matter.js ===== */
 const {Engine,Render,Runner,World,Bodies,Body,Composite,Events} = Matter;
-const engine = Engine.create();
-engine.gravity.y = 1.0;
+const engine = Engine.create(); engine.gravity.y = 1.0;
 const world = engine.world;
 
 const render = Render.create({
-  canvas: cv,
-  engine,
-  options: { width: W, height: H, background: 'transparent', wireframes: false, hasBounds: true }
+  canvas: cv, engine,
+  options:{ width: W, height: H, background:'transparent', wireframes:false, hasBounds:true }
 });
 Render.run(render);
 Runner.run(Runner.create(), engine);
 
 /* камера */
-render.bounds.min = {x:0, y:0};
-render.bounds.max = {x:W, y:H};
+render.bounds.min = {x:0,y:0};
+render.bounds.max = {x:W,y:H};
 let camY = H/2;
 
 /* границы мира */
 const wallL = Bodies.rectangle(-60, H/2, 120, H*6, {isStatic:true, render:{visible:false}});
 const wallR = Bodies.rectangle(W+60, H/2, 120, H*6, {isStatic:true, render:{visible:false}});
-/* физический пол — СКРЫТ из рендера: визуал даёт наш параллакс-слой */
+/* физический пол — скрыт; визуальный пол — в оверлее ниже канваса */
 const ground = Bodies.rectangle(W/2, H+45, W*3, 90, {isStatic:true, render:{visible:false}});
 World.add(world, [wallL, wallR, ground]);
 
-/* параметры блоков */
+/* блоки */
 const BW=84, BH=42;
-
-/* стартовый блок */
 const base = Bodies.rectangle(W/2, H - BH/2, BW, BH, {restitution:0.05, friction:0.9, render:{fillStyle:rc()}});
 World.add(world, base);
-let blocks = [base];
+let blocks=[base];
 
-/* подвешенный блок */
-let current=null, mode='swing', swingAngle=0, swingSpeed=0.02, amp=Math.min(W/3, 220);
-
+let current=null, mode='swing', swingAngle=0, swingSpeed=0.02, amp=Math.min(W/3,220);
 function newBlock(){
-  current = Bodies.rectangle(W/2, 120, BW, BH, { restitution:0.05, friction:0.9, render:{fillStyle:rc()} });
-  Body.setStatic(current, true);
-  World.add(world, current);
+  current = Bodies.rectangle(W/2, 120, BW, BH, {restitution:0.05, friction:0.9, render:{fillStyle:rc()}});
+  Body.setStatic(current,true);
+  World.add(world,current);
 }
 newBlock();
 
-/* сброс с сохранением горизонтальной скорости маятника */
 function drop(){
   if(mode!=='swing') return;
   const ropeX = W/2 + Math.sin(swingAngle)*amp;
   const vx = Math.cos(swingAngle)*amp*swingSpeed;
-  Body.setPosition(current, {x: ropeX, y: current.position.y});
-  Body.setVelocity(current, {x: vx, y: 0});
-  Body.setStatic(current, false);
+  Body.setPosition(current,{x:ropeX,y:current.position.y});
+  Body.setVelocity(current,{x:vx,y:0});
+  Body.setStatic(current,false);
   mode='drop';
 }
 
-/* логика качания и камера */
-Events.on(engine,'beforeUpdate', ()=>{
+/* качание и камера */
+Events.on(engine,'beforeUpdate',()=>{
   if(mode==='swing' && current){
     swingAngle += swingSpeed;
     const ropeX = W/2 + Math.sin(swingAngle)*amp;
-    Body.setPosition(current, {x: ropeX, y: current.position.y});
+    Body.setPosition(current,{x:ropeX,y:current.position.y});
   }
-
-  /* камера: следим за верхом башни; земля внизу — фиксированная в overlay */
+  // цель: держать верх башни на 40% высоты
   const bodies = Composite.allBodies(world).filter(b=>!b.isStatic);
-  let topY = Infinity;
-  for(const b of bodies){ if(b.bounds.min.y < topY) topY = b.bounds.min.y; }
+  let topY = Infinity; for(const b of bodies){ if(b.bounds.min.y<topY) topY=b.bounds.min.y; }
   const targetCamY = Math.min(H/2, topY - H*0.2);
   camY += (targetCamY - camY)*0.1;
-
-  render.bounds.min.x = 0;
-  render.bounds.max.x = W;
+  render.bounds.min.x = 0;  render.bounds.max.x = W;
   render.bounds.min.y = camY - H/2;
   render.bounds.max.y = camY + H/2;
   Matter.Render.lookAt(render, render.bounds);
 });
 
-/* установка блока или промах */
-Events.on(engine,'afterUpdate', ()=>{
+/* установка/промах */
+Events.on(engine,'afterUpdate',()=>{
   if(mode==='drop' && current){
     if(current.position.y > render.bounds.max.y + 220){
-      show('MISS');
-      current = null; newBlock(); mode='swing'; return;
+      show('MISS'); current=null; newBlock(); mode='swing'; return;
     }
     if(current.speed < 0.15 && current.position.y > 140){
       const last = blocks[blocks.length-1];
       const diff = Math.abs(current.position.x - last.position.x);
-      if(diff < 5){ show('PERFECT'); score+=3; amp = Math.max(80, amp*0.98); }
-      else if(diff < BW/2){ show('GOOD'); score+=1; }
-      else { score+=1; }
-
+      if(diff < 5){ show('PERFECT'); score+=3; amp=Math.max(80,amp*0.98); }
+      else if(diff < BW/2){ show('GOOD'); score+=1; } else { score+=1; }
       blocks.push(current);
       if(score>best){ best=score; localStorage.setItem('tb_best',best); }
-
-      swingSpeed = Math.min(0.045, swingSpeed + 0.0025);
-      amp = Math.min(Math.max(W/3, 220), amp*1.04);
-
-      current = null; newBlock(); mode='swing';
+      swingSpeed = Math.min(0.045, swingSpeed+0.0025);
+      amp = Math.min(Math.max(W/3,220), amp*1.04);
+      current=null; newBlock(); mode='swing';
     }
   }
 });
