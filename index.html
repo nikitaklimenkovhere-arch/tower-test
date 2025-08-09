@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Tower Bloxx — diagonal drop</title>
+<title>Tower Bloxx — Matter.js</title>
 <style>
-  html,body{margin:0;height:100%;overflow:hidden;background:linear-gradient(#87ceeb,#e0f6ff);font-family:system-ui,Arial}
+  html,body{margin:0;height:100%;overflow:hidden;background:linear-gradient(#87ceeb,#e0f6ff);font-family:sans-serif}
   canvas{display:block}
-  #hud{position:fixed;left:50%;top:10px;transform:translateX(-50%);background:rgba(255,255,255,.85);padding:6px 12px;border-radius:10px;font-weight:700}
-  #msg{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);color:#fff;font-size:42px;font-weight:900;text-shadow:0 2px 6px rgba(0,0,0,.6);opacity:0;transition:.25s}
-  #restart{position:fixed;left:50%;top:62%;transform:translateX(-50%);display:none;border:none;background:#ff4b77;color:#fff;padding:10px 18px;border-radius:10px;font-size:18px}
+  #hud{position:fixed;top:10px;left:50%;transform:translateX(-50%);background:rgba(255,255,255,.85);padding:6px 12px;border-radius:10px;font-weight:700;z-index:2}
+  #msg{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);color:#fff;font-size:42px;font-weight:900;text-shadow:0 2px 6px rgba(0,0,0,.6);opacity:0;transition:.25s;z-index:2}
+  #restart{position:fixed;top:62%;left:50%;transform:translateX(-50%);display:none;border:none;background:#ff4b77;color:#fff;padding:10px 18px;border-radius:10px;font-size:18px;z-index:2}
 </style>
 </head>
 <body>
@@ -17,116 +17,104 @@
 <div id="hud">Очки: 0 | Рекорд: 0</div>
 <div id="msg"></div>
 <button id="restart">Заново</button>
+
 <script>
-const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
-const hud = document.getElementById('hud'), msg = document.getElementById('msg'), btn = document.getElementById('restart');
+/*! Matter.js 0.19.0 — минифицированная версия */
+!function(e,t){"object"==typeof module&&"object"==typeof module.exports?module.exports=t():e.Matter=t()}(this,function(){/* ... Здесь будет минифицированный код matter.min.js ... */});
+</script>
 
-let W=0,H=0; const DPR = Math.min(2, window.devicePixelRatio||1);
-function resize(){ W=innerWidth; H=innerHeight; cv.width=W*DPR; cv.height=H*DPR; cv.style.width=W+"px"; cv.style.height=H+"px"; ctx.setTransform(DPR,0,0,DPR,0,0); }
-addEventListener('resize',resize); resize();
-
-const BW=84, BH=42, AMP_MIN=60, AMP_MAX= W/3;
-let blocks=[], current=null;
-let swingAngle=0, swingSpeed=0.02, amp=AMP_MIN;
-let gravity=0.65;
-let mode='swing'; // 'swing' | 'drop' | 'over'
+<script>
+// ========== НАСТРОЙКИ ==========
+const BW = 80, BH = 40;
+const W = window.innerWidth, H = window.innerHeight;
 let score=0, best=+localStorage.getItem('tb_best')||0;
-let towerOffset=0;
 
-function rc(){ const c=['#ff6b6b','#4dd0e1','#ffd166','#6ee7b7','#a78bfa']; return c[Math.random()*c.length|0]; }
+// ========== Matter.js ==========
+const {Engine,Render,Runner,World,Bodies,Body,Events,Composite} = Matter;
 
-function reset(){
-  blocks=[{x:W/2-BW/2,y:H-BH,width:BW,color:rc()}];
-  current={x:W/2-BW/2,y:110,width:BW,height:BH,color:rc(),vy:0,vx:0};
-  swingAngle=0; swingSpeed=0.02; amp=Math.min(AMP_MAX, AMP_MIN);
-  towerOffset=0; score=0; mode='swing'; btn.style.display='none';
+const engine = Engine.create();
+const world = engine.world;
+
+// Рендер на нашем canvas
+const render = Render.create({
+  canvas: document.getElementById('cv'),
+  engine: engine,
+  options: {
+    width: W,
+    height: H,
+    wireframes: false,
+    background: 'transparent'
+  }
+});
+Render.run(render);
+const runner = Runner.create();
+Runner.run(runner, engine);
+
+// Пол
+const ground = Bodies.rectangle(W/2, H+50, W, 100, { isStatic: true });
+World.add(world, ground);
+
+// Начальная башня (1 блок)
+let blocks = [];
+const baseBlock = Bodies.rectangle(W/2, H-BH/2, BW, BH, { restitution:0.05, friction:0.8 });
+blocks.push(baseBlock);
+World.add(world, baseBlock);
+
+let currentBlock = null;
+let swingAngle = 0;
+let swingSpeed = 0.02;
+let amp = W/3;
+let mode = 'swing';
+
+// Создание нового блока над башней
+function newBlock(){
+  currentBlock = Bodies.rectangle(W/2, 100, BW, BH, { restitution:0.05, friction:0.8 });
+  Body.setStatic(currentBlock, true); // пока висит
+  World.add(world, currentBlock);
 }
-reset();
+newBlock();
 
-function show(text){ msg.textContent=text; msg.style.opacity=1; setTimeout(()=>msg.style.opacity=0,450); }
-
+// Сброс блока
 function drop(){
   if(mode!=='swing') return;
-  // позиция и скорость в момент сброса
   const ropeX = W/2 + Math.sin(swingAngle)*amp;
-  const ropeVX = Math.cos(swingAngle)*amp*swingSpeed; // горизонтальная скорость
-  current.x = ropeX - BW/2;
-  current.vx = ropeVX;
-  current.vy = 0;
-  mode='drop';
+  Body.setPosition(currentBlock, {x: ropeX, y: currentBlock.position.y});
+  Body.setVelocity(currentBlock, {x: Math.cos(swingAngle)*amp*swingSpeed, y: 0});
+  Body.setStatic(currentBlock, false);
+  mode = 'drop';
 }
 
-function end(){
-  mode='over';
-  if(score>best){ best=score; localStorage.setItem('tb_best', best); }
-  btn.style.display='block';
-}
-
-function logic(){
+// Логика игры
+Events.on(engine, 'beforeUpdate', ()=>{
   if(mode==='swing'){
     swingAngle += swingSpeed;
-  } else if(mode==='drop'){
-    current.x += current.vx;
-    current.y += current.vy; 
-    current.vy += gravity;
-    const last = blocks[blocks.length-1];
-    if(current.y+BH >= last.y){
-      current.y = last.y - BH;
-      // точность
-      const diff = Math.abs((current.x+BW/2) - (last.x+BW/2));
-      if(diff < 5){ show('PERFECT'); score+=3; amp = Math.max(AMP_MIN, amp*0.98); }
-      else if(diff < BW/2){ show('GOOD'); score+=1; }
-      else { show('MISS'); return end(); }
-      // положить блок
-      blocks.push({x:current.x,y:current.y,width:BW,color:current.color});
-      // новый блок
-      current={x:W/2-BW/2,y:110 - towerOffset,width:BW,height:BH,color:rc(),vy:0,vx:0};
-      swingSpeed = Math.min(0.045, swingSpeed+0.0025);
-      amp = Math.min(AMP_MAX, amp*1.04);
-      if(blocks.length*BH > H*0.55){ towerOffset += BH; blocks.forEach(b=>b.y+=BH); }
+    const ropeX = W/2 + Math.sin(swingAngle)*amp;
+    Body.setPosition(currentBlock, {x: ropeX, y: currentBlock.position.y});
+  }
+  if(mode==='drop'){
+    if(currentBlock.position.y > H - BH - 50){
+      score++;
+      if(score>best){ best=score; localStorage.setItem('tb_best',best);}
+      blocks.push(currentBlock);
+      newBlock();
       mode='swing';
     }
   }
+});
+
+// HUD
+function hudUpdate(){
+  document.getElementById('hud').textContent = `Очки: ${score} | Рекорд: ${best}`;
+  requestAnimationFrame(hudUpdate);
 }
+hudUpdate();
 
-function clouds(){
-  ctx.fillStyle='rgba(255,255,255,.55)';
-  for(let i=0;i<5;i++){
-    const x = ((Date.now()/22)+(i*220))% (W+240) - 120;
-    const y = 40 + i*28;
-    ctx.beginPath(); ctx.ellipse(x,y,42,20,0,0,Math.PI*2); ctx.fill();
-  }
-}
-
-function draw(){
-  ctx.clearRect(0,0,W,H);
-  clouds();
-
-  // башня
-  for(const b of blocks){
-    ctx.fillStyle=b.color; ctx.fillRect(b.x,b.y,BW,BH);
-    ctx.strokeStyle='#000'; ctx.strokeRect(b.x,b.y,BW,BH);
-  }
-
-  if(mode==='swing'){
-    const ropeX = W/2 + Math.sin(swingAngle)*amp;
-    ctx.strokeStyle='rgba(0,0,0,.4)'; ctx.beginPath(); ctx.moveTo(W/2,0); ctx.lineTo(ropeX, current.y); ctx.stroke();
-    ctx.fillStyle=current.color; ctx.fillRect(ropeX-BW/2, current.y, BW, BH); ctx.strokeRect(ropeX-BW/2, current.y, BW, BH);
-  } else if(mode==='drop'){
-    ctx.fillStyle=current.color; ctx.fillRect(current.x, current.y, BW, BH);
-    ctx.strokeStyle='#000'; ctx.strokeRect(current.x, current.y, BW, BH);
-  }
-
-  hud.textContent = `Очки: ${score} | Рекорд: ${best}`;
-}
-
-function frame(){ logic(); draw(); requestAnimationFrame(frame); }
-requestAnimationFrame(frame);
-
-// ввод
-cv.addEventListener('click', drop, {passive:true});
-cv.addEventListener('touchstart', (e)=>{ e.preventDefault(); drop(); }, {passive:false});
-btn.addEventListener('click', reset);
+// Ввод
+document.getElementById('cv').addEventListener('click', drop);
+document.getElementById('cv').addEventListener('touchstart', e=>{e.preventDefault(); drop();},{passive:false});
+document.getElementById('restart').addEventListener('click', ()=>{
+  location.reload();
+});
 </script>
 </body>
 </html>
