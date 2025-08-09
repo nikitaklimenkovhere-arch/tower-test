@@ -79,8 +79,15 @@ const wallR = Bodies.rectangle(W+60, H/2, 120, H*6, {isStatic:true, render:{visi
 const ground = Bodies.rectangle(W/2, H-40, W*3, 80, {isStatic:true, render:{visible:false}});
 World.add(world, [wallL, wallR, ground]);
 
+// размеры блока
 const BW=84, BH=42;
-const base = Bodies.rectangle(W/2, H - 80 - BH/2, BW, BH, {restitution:0.05, friction:0.9, render:{fillStyle:rc()}});
+
+// центр травы
+const grassHeight = 75;
+const baseCenterY = H - grassHeight/2;
+
+// базовый блок по центру травы
+const base = Bodies.rectangle(W/2, baseCenterY, BW, BH, {restitution:0.05, friction:0.9, render:{fillStyle:rc()}});
 World.add(world, base);
 let blocks=[base];
 
