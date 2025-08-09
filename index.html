@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Tower Bloxx — Matter.js</title>
 <style>
-  html,body{margin:0;height:100%;overflow:hidden;background:linear-gradient(#87ceeb,#e0f6ff);font-family:sans-serif}
-  canvas{display:block}
+  html,body{margin:0;height:100%;overflow:hidden;background:linear-gradient(#87ceeb,#e0f6ff);font-family:system-ui,Arial}
   #hud{position:fixed;top:10px;left:50%;transform:translateX(-50%);background:rgba(255,255,255,.85);padding:6px 12px;border-radius:10px;font-weight:700;z-index:2}
   #msg{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);color:#fff;font-size:42px;font-weight:900;text-shadow:0 2px 6px rgba(0,0,0,.6);opacity:0;transition:.25s;z-index:2}
   #restart{position:fixed;top:62%;left:50%;transform:translateX(-50%);display:none;border:none;background:#ff4b77;color:#fff;padding:10px 18px;border-radius:10px;font-size:18px;z-index:2}
+  canvas{display:block}
 </style>
 </head>
 <body>
@@ -18,84 +18,114 @@
 <div id="msg"></div>
 <button id="restart">Заново</button>
 
-<script>
-/*! Matter.js 0.19.0 — минифицированная версия */
-!function(e,t){"object"==typeof module&&"object"==typeof module.exports?module.exports=t():e.Matter=t()}(this,function(){/* ... Здесь будет минифицированный код matter.min.js ... */});
-</script>
+<!-- Подключаем Matter.js из CDN (быстро и надёжно) -->
+<script src="https://cdn.jsdelivr.net/npm/matter-js@0.19.0/build/matter.min.js"></script>
 
 <script>
-// ========== НАСТРОЙКИ ==========
-const BW = 80, BH = 40;
-const W = window.innerWidth, H = window.innerHeight;
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+let W = innerWidth, H = innerHeight;
+function resize(){ W=innerWidth; H=innerHeight; cv.width=W; cv.height=H; }
+addEventListener('resize', resize); resize();
+
+const BW=84, BH=42;
 let score=0, best=+localStorage.getItem('tb_best')||0;
+const hud = document.getElementById('hud');
+const msg = document.getElementById('msg');
+const btn = document.getElementById('restart');
+function show(text){ msg.textContent=text; msg.style.opacity=1; setTimeout(()=>msg.style.opacity=0,500); }
 
-// ========== Matter.js ==========
-const {Engine,Render,Runner,World,Bodies,Body,Events,Composite} = Matter;
-
+// ===== Matter.js setup =====
+const {Engine,Render,Runner,World,Bodies,Body,Composite,Events} = Matter;
 const engine = Engine.create();
+engine.gravity.y = 1.0;
 const world = engine.world;
 
-// Рендер на нашем canvas
+// Рендер Matter на наш canvas
 const render = Render.create({
-  canvas: document.getElementById('cv'),
-  engine: engine,
-  options: {
-    width: W,
-    height: H,
-    wireframes: false,
-    background: 'transparent'
-  }
+  canvas: cv,
+  engine,
+  options: { width: W, height: H, background: 'transparent', wireframes: false }
 });
 Render.run(render);
-const runner = Runner.create();
-Runner.run(runner, engine);
+Runner.run(Runner.create(), engine);
 
-// Пол
-const ground = Bodies.rectangle(W/2, H+50, W, 100, { isStatic: true });
-World.add(world, ground);
+// Стены/пол
+const wallL = Bodies.rectangle(-40, H/2, 80, H*2, {isStatic:true});
+const wallR = Bodies.rectangle(W+40, H/2, 80, H*2, {isStatic:true});
+const ground = Bodies.rectangle(W/2, H+40, W, 80, {isStatic:true});
+World.add(world, [wallL, wallR, ground]);
 
-// Начальная башня (1 блок)
+// Блоки
+const colors = ['#ff6b6b','#4dd0e1','#ffd166','#6ee7b7','#a78bfa'];
+const rc = ()=>colors[Math.random()*colors.length|0];
 let blocks = [];
-const baseBlock = Bodies.rectangle(W/2, H-BH/2, BW, BH, { restitution:0.05, friction:0.8 });
-blocks.push(baseBlock);
-World.add(world, baseBlock);
+let current = null;
+let mode = 'swing'; // 'swing' | 'drop' | 'over'
+let swingAngle = 0, swingSpeed = 0.02, amp = Math.min(W/3, 220);
 
-let currentBlock = null;
-let swingAngle = 0;
-let swingSpeed = 0.02;
-let amp = W/3;
-let mode = 'swing';
+// База
+const base = Bodies.rectangle(W/2, H - BH/2, BW, BH, {restitution:0.05, friction:0.9, render:{fillStyle:rc()}});
+World.add(world, base);
+blocks.push(base);
 
-// Создание нового блока над башней
+// Новый подвешенный блок (статичен, «едет» по маятнику)
 function newBlock(){
-  currentBlock = Bodies.rectangle(W/2, 100, BW, BH, { restitution:0.05, friction:0.8 });
-  Body.setStatic(currentBlock, true); // пока висит
-  World.add(world, currentBlock);
+  current = Bodies.rectangle(W/2, 120, BW, BH, {
+    restitution:0.05, friction:0.9, render:{fillStyle:rc()}
+  });
+  Body.setStatic(current, true);
+  World.add(world, current);
 }
 newBlock();
 
-// Сброс блока
+// Сброс: фиксируем текущую позицию и задаём горизонтальную скорость от маятника
 function drop(){
   if(mode!=='swing') return;
   const ropeX = W/2 + Math.sin(swingAngle)*amp;
-  Body.setPosition(currentBlock, {x: ropeX, y: currentBlock.position.y});
-  Body.setVelocity(currentBlock, {x: Math.cos(swingAngle)*amp*swingSpeed, y: 0});
-  Body.setStatic(currentBlock, false);
+  const vx = Math.cos(swingAngle)*amp*swingSpeed;
+  Body.setPosition(current, {x: ropeX, y: current.position.y});
+  Body.setVelocity(current, {x: vx, y: 0});
+  Body.setStatic(current, false);
   mode = 'drop';
 }
 
-// Логика игры
+// Логика качания подвесного блока
 Events.on(engine, 'beforeUpdate', ()=>{
-  if(mode==='swing'){
+  if(mode==='swing' && current){
     swingAngle += swingSpeed;
     const ropeX = W/2 + Math.sin(swingAngle)*amp;
-    Body.setPosition(currentBlock, {x: ropeX, y: currentBlock.position.y});
+    Body.setPosition(current, {x: ropeX, y: current.position.y});
   }
-  if(mode==='drop'){
-    if(currentBlock.position.y > H - BH - 50){
-      score++;
-      if(score>best){ best=score; localStorage.setItem('tb_best',best);}
-      blocks.push(currentBlock);
+});
+
+// Когда «упавший» блок лег и уснул — считаем установленным, даём очки и создаём новый
+Events.on(engine, 'afterUpdate', ()=>{
+  if(mode==='drop' && current){
+    // Если улетел мимо экрана — промах
+    if(current.position.y > H + 120){
+      show('MISS');
+      score = 0; // по желанию можно не сбрасывать
+      newBlock();
+      mode='swing';
+      return;
+    }
+    // Если блок почти не движется — зафиксировался на башне/земле
+    const speed = current.speed;
+    if(speed < 0.15 && current.position.y > 140){
+      // точность по центру с верхним блоком (если он есть)
+      const last = blocks[blocks.length-1];
+      const diff = Math.abs((current.position.x) - (last.position.x));
+      if(diff < 5){ show('PERFECT'); score+=3; amp = Math.max(80, amp*0.98); }
+      else if(diff < BW/2){ show('GOOD'); score+=1; }
+      else { show('OK'); score+=1; }
+
+      blocks.push(current);
+      if(score>best){ best=score; localStorage.setItem('tb_best',best); }
+      // Усложняем маятник
+      swingSpeed = Math.min(0.045, swingSpeed + 0.0025);
+      amp = Math.min(Math.max(W/3, 220), amp*1.04);
+
       newBlock();
       mode='swing';
     }
@@ -103,18 +133,17 @@ Events.on(engine, 'beforeUpdate', ()=>{
 });
 
 // HUD
-function hudUpdate(){
-  document.getElementById('hud').textContent = `Очки: ${score} | Рекорд: ${best}`;
-  requestAnimationFrame(hudUpdate);
-}
-hudUpdate();
+(function hudLoop(){
+  hud.textContent = `Очки: ${score} | Рекорд: ${best}`;
+  requestAnimationFrame(hudLoop);
+})();
 
 // Ввод
-document.getElementById('cv').addEventListener('click', drop);
-document.getElementById('cv').addEventListener('touchstart', e=>{e.preventDefault(); drop();},{passive:false});
-document.getElementById('restart').addEventListener('click', ()=>{
-  location.reload();
-});
+cv.addEventListener('click', drop, {passive:true});
+cv.addEventListener('touchstart', e=>{ e.preventDefault(); drop(); }, {passive:false});
+
+// Рестарт просто перезагружает (быстро и чисто)
+btn.addEventListener('click', ()=>location.reload());
 </script>
 </body>
 </html>
